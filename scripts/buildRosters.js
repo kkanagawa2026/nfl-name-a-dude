@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const START_YEAR = 2000;
-const END_YEAR = 2024;
+const END_YEAR = 2026;
 
 function fetch(url, redirectCount = 0) {
   return new Promise((resolve, reject) => {
