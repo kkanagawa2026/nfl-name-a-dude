@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import Fuse from 'fuse.js';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getTeamName } from '../utils/teamNames';
 import rostersData from '../data/rosters.json';
 
 const MAX_WRONG = 3;
+const MAX_SUGGESTIONS = 8;
 
 function pickRandom(arr, exclude) {
   const available = arr.filter(c => !exclude.has(`${c.season}_${c.team}`));
@@ -12,14 +12,23 @@ function pickRandom(arr, exclude) {
 }
 
 export default function Game() {
+  const allPlayers = useMemo(() => {
+    const names = new Set();
+    rostersData.forEach(c => c.players.forEach(p => names.add(p)));
+    return [...names].sort();
+  }, []);
+
   const [combo, setCombo] = useState(null);
   const [input, setInput] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [streak, setStreak] = useState(0);
   const [lives, setLives] = useState(MAX_WRONG);
-  const [feedback, setFeedback] = useState(null); // { type: 'correct'|'wrong', text: string }
+  const [feedback, setFeedback] = useState(null);
   const [gameOver, setGameOver] = useState(false);
   const [used, setUsed] = useState(new Set());
   const inputRef = useRef(null);
+  const dropdownRef = useRef(null);
   const transitioning = useRef(false);
 
   const nextCombo = useCallback((usedSet) => {
@@ -32,12 +41,12 @@ export default function Game() {
 
   const startGame = useCallback(() => {
     transitioning.current = false;
-    const emptyUsed = new Set();
-    const first = pickRandom(rostersData, emptyUsed);
-    const newUsed = new Set([`${first.season}_${first.team}`]);
+    const first = pickRandom(rostersData, new Set());
     setCombo(first);
-    setUsed(newUsed);
+    setUsed(new Set([`${first.season}_${first.team}`]));
     setInput('');
+    setSuggestions([]);
+    setActiveIndex(-1);
     setStreak(0);
     setLives(MAX_WRONG);
     setFeedback(null);
@@ -47,22 +56,41 @@ export default function Game() {
 
   useEffect(() => { startGame(); }, [startGame]);
 
-  const handleSubmit = useCallback(() => {
-    if (!input.trim() || !combo || transitioning.current || gameOver) return;
+  // Filter suggestions as user types — names starting with input rank first
+  useEffect(() => {
+    const trimmed = input.trim();
+    if (!trimmed) { setSuggestions([]); setActiveIndex(-1); return; }
+    const lower = trimmed.toLowerCase();
+    const starts = allPlayers.filter(p => p.toLowerCase().startsWith(lower));
+    const contains = allPlayers.filter(p => !p.toLowerCase().startsWith(lower) && p.toLowerCase().includes(lower));
+    setSuggestions([...starts, ...contains].slice(0, MAX_SUGGESTIONS));
+    setActiveIndex(-1);
+  }, [input, allPlayers]);
 
-    const fuse = new Fuse(combo.players, {
-      threshold: 0.4,
-      ignoreLocation: true,
-    });
-    const results = fuse.search(input.trim());
+  // Close dropdown on outside click
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target) &&
+          inputRef.current && !inputRef.current.contains(e.target)) {
+        setSuggestions([]);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
 
-    if (results.length > 0) {
-      const matched = results[0].item;
+  const handleSelect = useCallback((playerName) => {
+    if (!combo || transitioning.current || gameOver) return;
+    setInput('');
+    setSuggestions([]);
+    setActiveIndex(-1);
+
+    const isCorrect = combo.players.includes(playerName);
+
+    if (isCorrect) {
       transitioning.current = true;
-      setFeedback({ type: 'correct', text: `✓ ${matched}` });
+      setFeedback({ type: 'correct', text: `✓ ${playerName}` });
       setStreak(s => s + 1);
-      setInput('');
-
       setTimeout(() => {
         setFeedback(null);
         nextCombo(used);
@@ -71,20 +99,46 @@ export default function Game() {
       }, 1300);
     } else {
       const newLives = lives - 1;
-      setInput('');
+      const text = `✗ ${playerName} wasn't on this roster`;
       if (newLives <= 0) {
-        setFeedback({ type: 'wrong', text: '✗ Wrong!' });
+        setFeedback({ type: 'wrong', text });
         setGameOver(true);
       } else {
         setLives(newLives);
-        setFeedback({ type: 'wrong', text: `✗ Not on this roster` });
+        setFeedback({ type: 'wrong', text });
         setTimeout(() => {
           setFeedback(null);
           inputRef.current?.focus();
         }, 1300);
       }
     }
-  }, [input, combo, lives, used, nextCombo, gameOver]);
+  }, [combo, lives, used, nextCombo, gameOver]);
+
+  const handleKeyDown = useCallback((e) => {
+    if (!suggestions.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(i => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const idx = activeIndex >= 0 ? activeIndex : 0;
+      if (suggestions[idx]) handleSelect(suggestions[idx]);
+    } else if (e.key === 'Escape') {
+      setSuggestions([]);
+      setActiveIndex(-1);
+    }
+  }, [suggestions, activeIndex, handleSelect]);
+
+  // Scroll active item into view
+  useEffect(() => {
+    if (activeIndex >= 0 && dropdownRef.current) {
+      const item = dropdownRef.current.children[activeIndex];
+      item?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex]);
 
   if (!combo) return <div className="loading">Loading...</div>;
 
@@ -125,25 +179,32 @@ export default function Game() {
           )}
 
           {!feedback && (
-            <div className="input-row">
+            <div className="autocomplete-wrapper">
               <input
                 ref={inputRef}
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                placeholder="Name a player..."
+                onKeyDown={handleKeyDown}
+                placeholder="Start typing a player name..."
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck="false"
               />
-              <button
-                className="btn-primary"
-                onClick={handleSubmit}
-                disabled={!input.trim()}
-              >
-                Submit
-              </button>
+              {suggestions.length > 0 && (
+                <ul className="dropdown" ref={dropdownRef}>
+                  {suggestions.map((name, i) => (
+                    <li
+                      key={name}
+                      className={i === activeIndex ? 'active' : ''}
+                      onMouseDown={() => handleSelect(name)}
+                      onMouseEnter={() => setActiveIndex(i)}
+                    >
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </>

@@ -134,14 +134,13 @@ h1 {
   border: 1px solid #da3633;
 }
 
-/* ── Input row ── */
-.input-row {
-  display: flex;
-  gap: 8px;
+/* ── Autocomplete ── */
+.autocomplete-wrapper {
+  position: relative;
 }
 
-.input-row input {
-  flex: 1;
+.autocomplete-wrapper input {
+  width: 100%;
   padding: 13px 16px;
   background: #161b22;
   border: 1px solid #30363d;
@@ -152,12 +151,54 @@ h1 {
   transition: border-color 0.15s;
 }
 
-.input-row input:focus {
+.autocomplete-wrapper input:focus {
   border-color: #58a6ff;
 }
 
-.input-row input::placeholder {
+.autocomplete-wrapper input::placeholder {
   color: #484f58;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  list-style: none;
+  overflow-y: auto;
+  max-height: 280px;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.dropdown li {
+  padding: 11px 16px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #c9d1d9;
+  border-bottom: 1px solid #21262d;
+  transition: background 0.1s, color 0.1s;
+}
+
+.dropdown li:last-child {
+  border-bottom: none;
+}
+
+.dropdown li:first-child {
+  border-radius: 10px 10px 0 0;
+}
+
+.dropdown li:last-child {
+  border-radius: 0 0 10px 10px;
+}
+
+.dropdown li.active,
+.dropdown li:hover {
+  background: #1f6feb;
+  color: #fff;
 }
 
 /* ── Buttons ── */
