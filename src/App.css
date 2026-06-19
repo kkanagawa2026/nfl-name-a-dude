@@ -1,0 +1,239 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.app {
+  width: 100%;
+  max-width: 480px;
+}
+
+h1 {
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #6e7681;
+  margin-bottom: 28px;
+}
+
+/* ── Game shell ── */
+.game {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Header row ── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.streak-display {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.streak-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6e7681;
+}
+
+.streak-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #f8a51b;
+  line-height: 1;
+}
+
+.lives-display {
+  display: flex;
+  gap: 6px;
+}
+
+.heart {
+  font-size: 1.5rem;
+  transition: color 0.2s;
+}
+
+.heart.alive  { color: #e74c3c; }
+.heart.lost   { color: #2d333b; }
+
+/* ── Team card ── */
+.team-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 14px;
+  padding: 36px 24px;
+  text-align: center;
+}
+
+.season-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6e7681;
+  margin-bottom: 10px;
+}
+
+.team-name {
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #e6edf3;
+  margin-bottom: 12px;
+}
+
+.player-count {
+  font-size: 0.78rem;
+  color: #484f58;
+}
+
+/* ── Feedback ── */
+.feedback {
+  text-align: center;
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+
+.feedback-correct {
+  background: #12261e;
+  color: #3fb950;
+  border: 1px solid #238636;
+}
+
+.feedback-wrong {
+  background: #2d0f0e;
+  color: #f85149;
+  border: 1px solid #da3633;
+}
+
+/* ── Input row ── */
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.input-row input {
+  flex: 1;
+  padding: 13px 16px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  color: #e6edf3;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.input-row input:focus {
+  border-color: #58a6ff;
+}
+
+.input-row input::placeholder {
+  color: #484f58;
+}
+
+/* ── Buttons ── */
+.btn-primary {
+  padding: 13px 20px;
+  background: #1f6feb;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #388bfd;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Game over ── */
+.game-over {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 14px;
+  padding: 40px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.game-over-emoji {
+  font-size: 3rem;
+}
+
+.game-over h2 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #f85149;
+}
+
+.final-streak {
+  font-size: 1.1rem;
+  color: #8b949e;
+}
+
+.final-streak strong {
+  color: #f8a51b;
+  font-size: 1.4rem;
+}
+
+.reveal {
+  font-size: 0.9rem;
+  color: #6e7681;
+}
+
+.reveal strong {
+  color: #8b949e;
+}
+
+.game-over .btn-primary {
+  margin-top: 6px;
+  padding: 14px 36px;
+  font-size: 1.05rem;
+}
+
+/* ── Loading ── */
+.loading {
+  text-align: center;
+  color: #6e7681;
+  padding: 40px;
+}
