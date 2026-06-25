@@ -64,6 +64,19 @@ body {
   gap: 14px;
 }
 
+.game-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.game-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
 /* ── High scores button ── */
 .header-right {
   display: flex;
@@ -828,4 +841,29 @@ body {
   padding: 60px 0;
   font-size: 0.9rem;
   letter-spacing: 0.08em;
+}
+
+/* ── Desktop side-by-side layout ── */
+@media (min-width: 760px) {
+  .app {
+    max-width: 860px;
+  }
+
+  .game-body {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 18px;
+  }
+
+  .game-main {
+    flex: 1;
+  }
+
+  .franchise-grid {
+    grid-template-columns: repeat(4, 1fr);
+    width: 210px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 20px;
+  }
 }

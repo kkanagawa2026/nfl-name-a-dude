@@ -350,8 +350,8 @@ export default function Game() {
         </div>
       </div>
 
-      {/* ── Franchise grid ── */}
-      <FranchiseGrid completed={completedFranchises} />
+      <div className="game-body">
+      <div className="game-main">
 
       {/* ── Team card ── */}
       {(phase === 'naming' || phase === 'bonus') && (
@@ -501,6 +501,13 @@ export default function Game() {
           </ul>
         </div>
       )}
+
+      </div>{/* end game-main */}
+
+      {/* ── Franchise grid ── */}
+      <FranchiseGrid completed={completedFranchises} />
+
+      </div>{/* end game-body */}
 
     </div>
   );
