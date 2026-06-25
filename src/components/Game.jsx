@@ -1,41 +1,70 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import Fuse from 'fuse.js';
 import { getTeamName, getLogoUrl, getFranchise, ALL_FRANCHISES } from '../utils/teamNames';
 import { saveScore } from './HighScores';
 import rostersData from '../data/rosters.json';
 
-const MAX_WRONG   = 3;
-const MAX_SUGGEST = 8;
-const WIN_COUNT   = 32;
+const MAX_WRONG = 3;
+const WIN_COUNT = 32;
 
 // ── Position classification ──────────────────────────────────────
-const OFFENSE = new Set(['QB','RB','FB','WR','TE','OT','OG','C','G','T','OL']);
-const DEFENSE = new Set(['DE','DT','NT','LB','ILB','OLB','MLB','CB','S','DB','SAF','SS','FS','EDGE','DL']);
+const OFFENSE  = new Set(['QB','RB','FB','WR','TE','OT','OG','C','G','T','OL']);
+const DEFENSE  = new Set(['DE','DT','NT','LB','ILB','OLB','MLB','CB','S','DB','SAF','SS','FS','EDGE','DL']);
+const SPEC_TMS = new Set(['K','P','LS']);
 
 function posInfo(pos) {
   const p = (pos ?? '').toUpperCase();
-  if (OFFENSE.has(p)) return { label: 'OFFENSE', pts: 2, cls: 'offense' };
-  if (DEFENSE.has(p)) return { label: 'DEFENSE', pts: 3, cls: 'defense' };
-  return { label: 'SPECIAL TEAMS', pts: 1, cls: 'special' };
+  if (OFFENSE.has(p))  return { label: 'OFFENSE',       pts: 2, cls: 'offense' };
+  if (DEFENSE.has(p))  return { label: 'DEFENSE',       pts: 3, cls: 'defense' };
+  if (SPEC_TMS.has(p)) return { label: 'SPECIAL TEAMS', pts: 3, cls: 'special' };
+  return                        { label: 'SPECIAL TEAMS', pts: 3, cls: 'special' };
 }
 
-// ── College matching ─────────────────────────────────────────────
-const ALIASES = {
+// ── College matching — Levenshtein, max 2 edits, no substring tricks ─
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const curr = new Array(b.length + 1);
+  for (let i = 0; i < a.length; i++) {
+    curr[0] = i + 1;
+    for (let j = 0; j < b.length; j++) {
+      curr[j + 1] = Math.min(
+        curr[j] + 1,
+        prev[j + 1] + 1,
+        prev[j] + (a[i] === b[j] ? 0 : 1)
+      );
+    }
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return curr[b.length];
+}
+
+const COLLEGE_ALIASES = {
   'usc': 'southern california', 'lsu': 'louisiana state',
-  'fsu': 'florida state', 'ohio st': 'ohio state',
-  'penn st': 'penn state', 'uga': 'georgia',
-  'bama': 'alabama', 'ou': 'oklahoma', 'psu': 'penn state',
+  'fsu': 'florida state',       'ohio st': 'ohio state',
+  'penn st': 'penn state',      'uga': 'georgia',
+  'bama': 'alabama',            'ou': 'oklahoma',
+  'psu': 'penn state',          'tcу': 'texas christian',
 };
+
+function normalizeCollege(s) {
+  return s.toLowerCase().replace(/[.()'&]/g, '').replace(/\s+/g, ' ').trim();
+}
 
 function collegeMatches(input, college) {
   if (!college || !input.trim()) return false;
-  const a = input.trim().toLowerCase().replace(/[.()']/g, '');
-  const b = college.toLowerCase().replace(/[.()']/g, '');
-  if (b.includes(a) || a.includes(b)) return true;
-  for (const [alias, full] of Object.entries(ALIASES)) {
-    if (a === alias && b.includes(full)) return true;
-    if (b === alias && a.includes(full)) return true;
+  const a = normalizeCollege(input);
+  const b = normalizeCollege(college);
+  if (a === b) return true;
+  // Known abbreviations (e.g. USC → southern california)
+  for (const [alias, full] of Object.entries(COLLEGE_ALIASES)) {
+    if (a === alias && b === full) return true;
+    if (b === alias && a === full) return true;
   }
-  return false;
+  // Levenshtein — allow up to 2 edits (typos only, not partial strings)
+  return levenshtein(a, b) <= 2;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -66,14 +95,6 @@ function FranchiseGrid({ completed }) {
 
 // ── Component ────────────────────────────────────────────────────
 export default function Game() {
-  const allPlayers = useMemo(() => {
-    const seen = new Set(); const names = [];
-    rostersData.forEach(c => c.players.forEach(p => {
-      if (!seen.has(p.name)) { seen.add(p.name); names.push(p.name); }
-    }));
-    return names.sort();
-  }, []);
-
   const [combo,               setCombo]               = useState(null);
   const [usedCombos,          setUsedCombos]          = useState(new Set());
   const [usedPlayerFranchise, setUsedPlayerFranchise] = useState(new Set());
@@ -86,15 +107,11 @@ export default function Game() {
   const [bonusInput,          setBonusInput]          = useState('');
   const [bonusDone,           setBonusDone]           = useState(null);
   const [ledger,              setLedger]              = useState([]);
+  const [input,               setInput]               = useState('');
 
-  const [input,       setInput]       = useState('');
-  const [suggestions, setSuggestions] = useState([]);
-  const [activeIdx,   setActiveIdx]   = useState(-1);
-
-  const inputRef    = useRef(null);
-  const bonusRef    = useRef(null);
-  const dropdownRef = useRef(null);
-  const busy        = useRef(false);
+  const inputRef = useRef(null);
+  const bonusRef = useRef(null);
+  const busy     = useRef(false);
 
   // ── Advance ─────────────────────────────────────────────────
   const advance = useCallback((usedCombosSet, newCompleted, currentScore) => {
@@ -132,47 +149,33 @@ export default function Game() {
 
   useEffect(() => { startGame(); }, [startGame]);
 
-  // ── Autocomplete ─────────────────────────────────────────────
-  useEffect(() => {
-    const t = input.trim();
-    if (!t) { setSuggestions([]); setActiveIdx(-1); return; }
-    const lower = t.toLowerCase();
-    const starts   = allPlayers.filter(p => p.toLowerCase().startsWith(lower));
-    const contains = allPlayers.filter(p => !p.toLowerCase().startsWith(lower) && p.toLowerCase().includes(lower));
-    setSuggestions([...starts, ...contains].slice(0, MAX_SUGGEST));
-    setActiveIdx(-1);
-  }, [input, allPlayers]);
-
-  useEffect(() => {
-    const h = (e) => {
-      if (dropdownRef.current?.contains(e.target) || inputRef.current?.contains(e.target)) return;
-      setSuggestions([]);
-    };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  useEffect(() => {
-    if (activeIdx >= 0) dropdownRef.current?.children[activeIdx]?.scrollIntoView({ block: 'nearest' });
-  }, [activeIdx]);
-
-  // ── Select player ────────────────────────────────────────────
-  const handleSelect = useCallback((playerName) => {
-    if (!combo || busy.current || phase !== 'naming') return;
-    setInput(''); setSuggestions([]); setActiveIdx(-1);
+  // ── Submit player guess ──────────────────────────────────────
+  const handleSubmit = useCallback(() => {
+    if (!combo || busy.current || phase !== 'naming' || !input.trim()) return;
 
     const franchise = getFranchise(combo.team);
-    const pfKey = `${playerName}_${franchise}`;
-    if (usedPlayerFranchise.has(pfKey)) {
-      setFeedback({ type: 'warn', text: `You already used ${playerName} for this franchise — try someone else` });
-      setTimeout(() => { setFeedback(null); inputRef.current?.focus(); }, 2000);
-      return;
+    const pfKey = `${input.trim()}_${franchise}`;
+
+    // Fuzzy match against this roster's player names
+    const fuse = new Fuse(combo.players, { keys: ['name'], threshold: 0.35, ignoreLocation: true });
+    const results = fuse.search(input.trim());
+    const found = results[0]?.item ?? null;
+
+    // Franchise-repeat check (must do after fuzzy so we have the canonical name)
+    if (found) {
+      const canonicalKey = `${found.name}_${franchise}`;
+      if (usedPlayerFranchise.has(canonicalKey)) {
+        setFeedback({ type: 'warn', text: `You already used ${found.name} for this franchise — try someone else` });
+        setInput('');
+        setTimeout(() => { setFeedback(null); inputRef.current?.focus(); }, 2000);
+        return;
+      }
     }
 
-    const found = combo.players.find(p => p.name === playerName);
     if (!found) {
       const newLives = lives - 1;
-      const msg = { type: 'wrong', text: `✗ ${playerName} wasn't on this roster` };
+      const msg = { type: 'wrong', text: `✗ "${input.trim()}" wasn't on this roster` };
+      setInput('');
       if (newLives <= 0) {
         setLives(0); setFeedback(msg);
         saveScore(score);
@@ -185,14 +188,17 @@ export default function Game() {
     }
 
     // Correct
-    const newPF = new Set(usedPlayerFranchise); newPF.add(pfKey);
+    setInput('');
+    const newPF = new Set(usedPlayerFranchise);
+    newPF.add(`${found.name}_${franchise}`);
     setUsedPlayerFranchise(newPF);
 
-    const newCompleted = new Set(completedFranchises); newCompleted.add(franchise);
+    const newCompleted = new Set(completedFranchises);
+    newCompleted.add(franchise);
     setCompletedFranchises(newCompleted);
 
-    const info = posInfo(found.pos);
-    const pts  = info.pts;
+    const info     = posInfo(found.pos);
+    const pts      = info.pts;
     const newScore = score + pts;
     setScore(newScore);
 
@@ -215,15 +221,7 @@ export default function Game() {
       setPhase('bonus');
       setTimeout(() => advance(usedCombos, newCompleted, newScore), 1400);
     }
-  }, [combo, lives, phase, score, usedCombos, usedPlayerFranchise, completedFranchises, advance]);
-
-  const handleNamingKeyDown = useCallback((e) => {
-    if (!suggestions.length) return;
-    if      (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)); }
-    else if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
-    else if (e.key === 'Enter')     { e.preventDefault(); const idx = activeIdx >= 0 ? activeIdx : 0; if (suggestions[idx]) handleSelect(suggestions[idx]); }
-    else if (e.key === 'Escape')    { setSuggestions([]); setActiveIdx(-1); }
-  }, [suggestions, activeIdx, handleSelect]);
+  }, [combo, input, lives, phase, score, usedCombos, usedPlayerFranchise, completedFranchises, advance]);
 
   // ── Bonus ────────────────────────────────────────────────────
   const submitBonus = useCallback((skip = false) => {
@@ -280,7 +278,7 @@ export default function Game() {
           )}
           <div className="team-season">{combo.season} Season</div>
           <div className="team-name">{getTeamName(combo.team, combo.season)}</div>
-          <div className="roster-hint">{combo.players.length} players · offense 2 pts · defense 3 pts</div>
+          <div className="roster-hint">{combo.players.length} players · offense 2 pts · defense / ST 3 pts</div>
         </div>
       )}
 
@@ -311,24 +309,17 @@ export default function Game() {
         <>
           {feedback && <div className={`inline-feedback ${feedback.type}`}>{feedback.text}</div>}
           {!feedback && (
-            <div className="autocomplete-wrapper">
+            <div className="input-row">
               <input
                 ref={inputRef} type="text" value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={handleNamingKeyDown}
+                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                 placeholder="Name a player on this roster…"
                 autoComplete="off" autoCorrect="off" spellCheck="false"
               />
-              {suggestions.length > 0 && (
-                <ul className="dropdown" ref={dropdownRef}>
-                  {suggestions.map((name, i) => (
-                    <li key={name} className={i === activeIdx ? 'active' : ''}
-                      onMouseDown={() => handleSelect(name)}
-                      onMouseEnter={() => setActiveIdx(i)}
-                    >{name}</li>
-                  ))}
-                </ul>
-              )}
+              <button className="btn-primary" onClick={handleSubmit} disabled={!input.trim()}>
+                Submit
+              </button>
             </div>
           )}
         </>
