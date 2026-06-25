@@ -5,19 +5,16 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const START_YEAR = 2000;
-const END_YEAR = 2026;
+const END_YEAR   = 2026;
 
-function fetch(url, redirectCount = 0) {
+function fetchText(url, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     if (redirectCount > 5) return reject(new Error('Too many redirects'));
     https.get(url, { headers: { 'User-Agent': 'nfl-name-a-dude/1.0' } }, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
-        return fetch(res.headers.location, redirectCount + 1).then(resolve).catch(reject);
+        return fetchText(res.headers.location, redirectCount + 1).then(resolve).catch(reject);
       }
-      if (res.statusCode !== 200) {
-        res.resume();
-        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode}`)); }
       const chunks = [];
       res.on('data', c => chunks.push(c));
       res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
@@ -26,37 +23,29 @@ function fetch(url, redirectCount = 0) {
   });
 }
 
-function splitCSVLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
+function splitLine(line) {
+  const result = []; let cur = ''; let inQ = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += ch;
-    }
+    if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else cur += ch;
   }
-  result.push(current.trim());
+  result.push(cur.trim());
   return result;
 }
 
 function parseCSV(text) {
   const lines = text.split('\n');
   if (!lines.length) return [];
-  const headers = splitCSVLine(lines[0]);
+  const headers = splitLine(lines[0]);
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const values = splitCSVLine(line);
+    const vals = splitLine(line);
     const obj = {};
-    headers.forEach((h, idx) => { obj[h] = values[idx] ?? ''; });
+    headers.forEach((h, idx) => { obj[h] = vals[idx] ?? ''; });
     rows.push(obj);
   }
   return rows;
@@ -67,32 +56,52 @@ function clean(val) {
   return (v === 'NA' || v === '') ? null : v;
 }
 
+// Build gsis_id → college from the nflverse players master file
+async function buildCollegeMap() {
+  console.log('Fetching players.csv for college supplement…');
+  try {
+    const csv = await fetchText(
+      'https://github.com/nflverse/nflverse-data/releases/download/players/players.csv'
+    );
+    const rows = parseCSV(csv);
+    const map = new Map();
+    for (const row of rows) {
+      const id = clean(row.gsis_id);
+      const college = clean(row.college_name) || clean(row.college);
+      if (id && college) map.set(id, college);
+    }
+    console.log(`  → ${map.size} college entries loaded\n`);
+    return map;
+  } catch (err) {
+    console.log(`  → Could not fetch players.csv (${err.message}), skipping supplement\n`);
+    return new Map();
+  }
+}
+
 async function main() {
+  const collegeMap = await buildCollegeMap();
   const BASE_URL = 'https://github.com/nflverse/nflverse-data/releases/download/rosters';
-  // key → Map<playerName, {pos, college}>
   const combos = {};
 
   for (let year = START_YEAR; year <= END_YEAR; year++) {
-    const url = `${BASE_URL}/roster_${year}.csv`;
-    process.stdout.write(`Fetching ${year}... `);
+    process.stdout.write(`Fetching ${year}… `);
     try {
-      const csv = await fetch(url);
+      const csv = await fetchText(`${BASE_URL}/roster_${year}.csv`);
       const rows = parseCSV(csv);
 
       for (const row of rows) {
-        const name = clean(row.full_name);
-        const team = clean(row.team);
-        const pos  = clean(row.position);
-        const college = clean(row.college);
-        const season = parseInt(row.season, 10) || year;
+        const name    = clean(row.full_name);
+        const team    = clean(row.team);
+        const pos     = clean(row.position);
+        const gsisId  = clean(row.gsis_id);
+        const season  = parseInt(row.season, 10) || year;
+        // Prefer roster-level college; fall back to master players map
+        const college = clean(row.college) || (gsisId ? collegeMap.get(gsisId) ?? null : null);
         if (!name || !team) continue;
 
         const key = `${season}_${team}`;
         if (!combos[key]) combos[key] = { season, team, players: new Map() };
-
-        // Keep the first entry we see for each player name
         if (!combos[key].players.has(name)) {
-          // only store defined fields to keep JSON compact
           const entry = {};
           if (pos)     entry.pos     = pos;
           if (college) entry.college = college;
@@ -120,7 +129,7 @@ async function main() {
   const outPath = path.join(__dirname, '../src/data/rosters.json');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify(data));
-  console.log(`\nWrote ${data.length} team-season combos to src/data/rosters.json`);
+  console.log(`\nWrote ${data.length} team-season combos → src/data/rosters.json`);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

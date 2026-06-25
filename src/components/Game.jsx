@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { getTeamName, getLogoUrl, getFranchise } from '../utils/teamNames';
+import { getTeamName, getLogoUrl, getFranchise, ALL_FRANCHISES } from '../utils/teamNames';
+import { saveScore } from './HighScores';
 import rostersData from '../data/rosters.json';
 
 const MAX_WRONG   = 3;
 const MAX_SUGGEST = 8;
+const WIN_COUNT   = 32;
 
 // ── Position classification ──────────────────────────────────────
 const OFFENSE = new Set(['QB','RB','FB','WR','TE','OT','OG','C','G','T','OL']);
@@ -18,15 +20,10 @@ function posInfo(pos) {
 
 // ── College matching ─────────────────────────────────────────────
 const ALIASES = {
-  'usc': 'southern california',
-  'lsu': 'louisiana state',
-  'fsu': 'florida state',
-  'ohio st': 'ohio state',
-  'penn st': 'penn state',
-  'uga': 'georgia',
-  'bama': 'alabama',
-  'ou': 'oklahoma',
-  'psu': 'penn state',
+  'usc': 'southern california', 'lsu': 'louisiana state',
+  'fsu': 'florida state', 'ohio st': 'ohio state',
+  'penn st': 'penn state', 'uga': 'georgia',
+  'bama': 'alabama', 'ou': 'oklahoma', 'psu': 'penn state',
 };
 
 function collegeMatches(input, college) {
@@ -41,37 +38,55 @@ function collegeMatches(input, college) {
   return false;
 }
 
-// ── Random combo picker ─────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────
 function pickRandom(arr, exclude) {
   const pool = arr.filter(c => !exclude.has(`${c.season}_${c.team}`));
   return (pool.length ? pool : arr)[Math.floor(Math.random() * (pool.length || arr.length))];
 }
 
+// ── Franchise tracker grid ───────────────────────────────────────
+function FranchiseGrid({ completed }) {
+  return (
+    <div className="franchise-grid">
+      {ALL_FRANCHISES.map(({ franchise, slug, name }) => {
+        const done = completed.has(franchise);
+        return (
+          <div key={franchise} className={`franchise-cell ${done ? 'done' : ''}`} title={name}>
+            <img
+              src={`https://a.espncdn.com/i/teamlogos/nfl/500/${slug}.png`}
+              alt={name}
+              onError={e => { e.target.style.display = 'none'; }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────
 export default function Game() {
   const allPlayers = useMemo(() => {
-    const seen = new Set();
-    const names = [];
+    const seen = new Set(); const names = [];
     rostersData.forEach(c => c.players.forEach(p => {
       if (!seen.has(p.name)) { seen.add(p.name); names.push(p.name); }
     }));
     return names.sort();
   }, []);
 
-  // core game state
-  const [combo,              setCombo]              = useState(null);
-  const [usedCombos,         setUsedCombos]         = useState(new Set());
-  const [usedPlayerFranchise,setUsedPlayerFranchise]= useState(new Set()); // "playerName_franchise"
-  const [score,              setScore]              = useState(0);
-  const [lives,              setLives]              = useState(MAX_WRONG);
-  const [phase,              setPhase]              = useState('naming'); // naming | bonus | gameover
-  const [lastPlayer,         setLastPlayer]         = useState(null);
-  const [feedback,           setFeedback]           = useState(null);
-  const [bonusInput,         setBonusInput]         = useState('');
-  const [bonusDone,          setBonusDone]          = useState(null); // null | correct | wrong | skip
-  const [ledger,             setLedger]             = useState([]); // history of correct picks
+  const [combo,               setCombo]               = useState(null);
+  const [usedCombos,          setUsedCombos]          = useState(new Set());
+  const [usedPlayerFranchise, setUsedPlayerFranchise] = useState(new Set());
+  const [completedFranchises, setCompletedFranchises] = useState(new Set());
+  const [score,               setScore]               = useState(0);
+  const [lives,               setLives]               = useState(MAX_WRONG);
+  const [phase,               setPhase]               = useState('naming'); // naming|bonus|gameover|won
+  const [lastPlayer,          setLastPlayer]          = useState(null);
+  const [feedback,            setFeedback]            = useState(null);
+  const [bonusInput,          setBonusInput]          = useState('');
+  const [bonusDone,           setBonusDone]           = useState(null);
+  const [ledger,              setLedger]              = useState([]);
 
-  // autocomplete
   const [input,       setInput]       = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [activeIdx,   setActiveIdx]   = useState(-1);
@@ -81,50 +96,47 @@ export default function Game() {
   const dropdownRef = useRef(null);
   const busy        = useRef(false);
 
-  // ── Advance to next combo ─────────────────────────────────────
-  const advance = useCallback((usedCombosSet) => {
+  // ── Advance ─────────────────────────────────────────────────
+  const advance = useCallback((usedCombosSet, newCompleted, currentScore) => {
+    // Win check
+    if (newCompleted.size >= WIN_COUNT) {
+      saveScore(currentScore);
+      setPhase('won');
+      busy.current = false;
+      return;
+    }
     const next = pickRandom(rostersData, usedCombosSet);
     const newUsed = new Set(usedCombosSet);
     newUsed.add(`${next.season}_${next.team}`);
     setCombo(next);
     setUsedCombos(newUsed);
-    setInput('');
-    setSuggestions([]);
-    setActiveIdx(-1);
-    setFeedback(null);
-    setPhase('naming');
+    setInput(''); setSuggestions([]); setActiveIdx(-1);
+    setFeedback(null); setPhase('naming');
     busy.current = false;
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
 
-  // ── Start / restart ──────────────────────────────────────────
   const startGame = useCallback(() => {
     busy.current = false;
     const first = pickRandom(rostersData, new Set());
     setCombo(first);
     setUsedCombos(new Set([`${first.season}_${first.team}`]));
     setUsedPlayerFranchise(new Set());
-    setScore(0);
-    setLives(MAX_WRONG);
-    setPhase('naming');
-    setLastPlayer(null);
-    setFeedback(null);
-    setInput('');
-    setSuggestions([]);
-    setActiveIdx(-1);
-    setBonusInput('');
-    setBonusDone(null);
-    setLedger([]);
+    setCompletedFranchises(new Set());
+    setScore(0); setLives(MAX_WRONG);
+    setPhase('naming'); setLastPlayer(null); setFeedback(null);
+    setInput(''); setSuggestions([]); setActiveIdx(-1);
+    setBonusInput(''); setBonusDone(null); setLedger([]);
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
 
   useEffect(() => { startGame(); }, [startGame]);
 
-  // ── Autocomplete filtering ────────────────────────────────────
+  // ── Autocomplete ─────────────────────────────────────────────
   useEffect(() => {
-    const trimmed = input.trim();
-    if (!trimmed) { setSuggestions([]); setActiveIdx(-1); return; }
-    const lower = trimmed.toLowerCase();
+    const t = input.trim();
+    if (!t) { setSuggestions([]); setActiveIdx(-1); return; }
+    const lower = t.toLowerCase();
     const starts   = allPlayers.filter(p => p.toLowerCase().startsWith(lower));
     const contains = allPlayers.filter(p => !p.toLowerCase().startsWith(lower) && p.toLowerCase().includes(lower));
     setSuggestions([...starts, ...contains].slice(0, MAX_SUGGEST));
@@ -132,80 +144,67 @@ export default function Game() {
   }, [input, allPlayers]);
 
   useEffect(() => {
-    const handler = (e) => {
+    const h = (e) => {
       if (dropdownRef.current?.contains(e.target) || inputRef.current?.contains(e.target)) return;
       setSuggestions([]);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, []);
 
   useEffect(() => {
-    if (activeIdx >= 0 && dropdownRef.current) {
-      dropdownRef.current.children[activeIdx]?.scrollIntoView({ block: 'nearest' });
-    }
+    if (activeIdx >= 0) dropdownRef.current?.children[activeIdx]?.scrollIntoView({ block: 'nearest' });
   }, [activeIdx]);
 
-  // ── Player selection ─────────────────────────────────────────
+  // ── Select player ────────────────────────────────────────────
   const handleSelect = useCallback((playerName) => {
     if (!combo || busy.current || phase !== 'naming') return;
-    setInput('');
-    setSuggestions([]);
-    setActiveIdx(-1);
+    setInput(''); setSuggestions([]); setActiveIdx(-1);
 
-    // Check franchise constraint (no repeating same player for same franchise)
     const franchise = getFranchise(combo.team);
     const pfKey = `${playerName}_${franchise}`;
     if (usedPlayerFranchise.has(pfKey)) {
-      setFeedback({
-        type: 'warn',
-        text: `You already named ${playerName} for this franchise — try someone else`,
-      });
+      setFeedback({ type: 'warn', text: `You already used ${playerName} for this franchise — try someone else` });
       setTimeout(() => { setFeedback(null); inputRef.current?.focus(); }, 2000);
       return;
     }
 
-    // Check if player is on this roster
     const found = combo.players.find(p => p.name === playerName);
     if (!found) {
       const newLives = lives - 1;
+      const msg = { type: 'wrong', text: `✗ ${playerName} wasn't on this roster` };
       if (newLives <= 0) {
-        setLives(0);
-        setFeedback({ type: 'wrong', text: `✗ ${playerName} wasn't on this roster` });
+        setLives(0); setFeedback(msg);
+        saveScore(score);
         setPhase('gameover');
       } else {
-        setLives(newLives);
-        setFeedback({ type: 'wrong', text: `✗ ${playerName} wasn't on this roster` });
+        setLives(newLives); setFeedback(msg);
         setTimeout(() => { setFeedback(null); inputRef.current?.focus(); }, 1400);
       }
       return;
     }
 
-    // Correct — mark player as used for this franchise
-    const newPF = new Set(usedPlayerFranchise);
-    newPF.add(pfKey);
+    // Correct
+    const newPF = new Set(usedPlayerFranchise); newPF.add(pfKey);
     setUsedPlayerFranchise(newPF);
+
+    const newCompleted = new Set(completedFranchises); newCompleted.add(franchise);
+    setCompletedFranchises(newCompleted);
 
     const info = posInfo(found.pos);
     const pts  = info.pts;
-    setScore(s => s + pts);
+    const newScore = score + pts;
+    setScore(newScore);
+
     const playerData = { ...found, pts, info };
     setLastPlayer(playerData);
-    setBonusInput('');
-    setBonusDone(null);
-    setFeedback(null);
+    setBonusInput(''); setBonusDone(null); setFeedback(null);
 
-    // Add to ledger (we'll update with bonus pts later in submitBonus)
     setLedger(l => [{
-      name: playerData.name,
-      pos: playerData.pos,
-      info,
-      pts,
-      bonusPts: 0,
+      name: playerData.name, pos: playerData.pos, info, pts, bonusPts: 0,
       college: playerData.college,
       teamName: getTeamName(combo.team, combo.season),
-      season: combo.season,
-      team: combo.team,
+      season: combo.season, team: combo.team,
     }, ...l]);
 
     if (found.college) {
@@ -214,9 +213,9 @@ export default function Game() {
     } else {
       busy.current = true;
       setPhase('bonus');
-      setTimeout(() => advance(usedCombos), 1500);
+      setTimeout(() => advance(usedCombos, newCompleted, newScore), 1400);
     }
-  }, [combo, lives, phase, usedCombos, usedPlayerFranchise, advance]);
+  }, [combo, lives, phase, score, usedCombos, usedPlayerFranchise, completedFranchises, advance]);
 
   const handleNamingKeyDown = useCallback((e) => {
     if (!suggestions.length) return;
@@ -226,28 +225,24 @@ export default function Game() {
     else if (e.key === 'Escape')    { setSuggestions([]); setActiveIdx(-1); }
   }, [suggestions, activeIdx, handleSelect]);
 
-  // ── College bonus ────────────────────────────────────────────
+  // ── Bonus ────────────────────────────────────────────────────
   const submitBonus = useCallback((skip = false) => {
     if (busy.current) return;
     busy.current = true;
-
-    let bonusPts = 0;
-    let result = 'skip';
+    let bonusPts = 0; let result = 'skip';
     if (!skip && bonusInput.trim() && collegeMatches(bonusInput, lastPlayer?.college)) {
-      bonusPts = 1;
-      result = 'correct';
-      setScore(s => s + 1);
-    } else if (!skip) {
-      result = 'wrong';
-    }
-
-    setBonusDone(result);
-    // Update ledger entry with bonus pts
-    if (bonusPts > 0) {
+      bonusPts = 1; result = 'correct';
+      const newScore = score + 1;
+      setScore(newScore);
       setLedger(l => l.map((e, i) => i === 0 ? { ...e, bonusPts: 1 } : e));
+      setBonusDone(result);
+      setTimeout(() => advance(usedCombos, completedFranchises, newScore), 1600);
+    } else {
+      result = skip ? 'skip' : 'wrong';
+      setBonusDone(result);
+      setTimeout(() => advance(usedCombos, completedFranchises, score), 1600);
     }
-    setTimeout(() => advance(usedCombos), 1600);
-  }, [bonusInput, lastPlayer, usedCombos, advance]);
+  }, [bonusInput, lastPlayer, score, usedCombos, completedFranchises, advance]);
 
   if (!combo) return <div className="loading">Loading…</div>;
 
@@ -262,6 +257,10 @@ export default function Game() {
           <span className="score-label">SCORE</span>
           <span className="score-value">{score}</span>
         </div>
+        <div className="progress-block">
+          <span className="score-label">TEAMS</span>
+          <span className="score-value teams-value">{completedFranchises.size}<span className="teams-denom">/{WIN_COUNT}</span></span>
+        </div>
         <div className="lives-block">
           {Array.from({ length: MAX_WRONG }, (_, i) => (
             <span key={i} className={`life-icon ${i < lives ? 'alive' : 'gone'}`}>🏈</span>
@@ -269,16 +268,21 @@ export default function Game() {
         </div>
       </div>
 
+      {/* ── Franchise grid ── */}
+      <FranchiseGrid completed={completedFranchises} />
+
       {/* ── Team card ── */}
-      <div className={`team-card ${phase === 'gameover' ? 'gameover-card' : ''}`}>
-        {logoUrl && (
-          <img className="team-logo" src={logoUrl} alt=""
-            onError={e => { e.target.style.display = 'none'; }} />
-        )}
-        <div className="team-season">{combo.season} Season</div>
-        <div className="team-name">{getTeamName(combo.team, combo.season)}</div>
-        <div className="roster-hint">{combo.players.length} players · offense 2 pts · defense 3 pts</div>
-      </div>
+      {(phase === 'naming' || phase === 'bonus') && (
+        <div className="team-card">
+          {logoUrl && (
+            <img className="team-logo" src={logoUrl} alt=""
+              onError={e => { e.target.style.display = 'none'; }} />
+          )}
+          <div className="team-season">{combo.season} Season</div>
+          <div className="team-name">{getTeamName(combo.team, combo.season)}</div>
+          <div className="roster-hint">{combo.players.length} players · offense 2 pts · defense 3 pts</div>
+        </div>
+      )}
 
       {/* ── Game over ── */}
       {phase === 'gameover' && (
@@ -287,6 +291,17 @@ export default function Game() {
           <div className="result-title">Game Over</div>
           {feedback && <div className="result-sub">{feedback.text}</div>}
           <div className="final-score">Final score: <strong>{score}</strong></div>
+          <div className="final-score" style={{fontSize:'0.85rem'}}>Teams completed: <strong>{completedFranchises.size}/{WIN_COUNT}</strong></div>
+          <button className="btn-primary" onClick={startGame}>Play Again</button>
+        </div>
+      )}
+
+      {/* ── You win ── */}
+      {phase === 'won' && (
+        <div className="result-panel won-panel">
+          <div className="result-icon">🏆</div>
+          <div className="result-title won-title">All 32 Teams!</div>
+          <div className="final-score">Final score: <strong>{score}</strong></div>
           <button className="btn-primary" onClick={startGame}>Play Again</button>
         </div>
       )}
@@ -294,14 +309,11 @@ export default function Game() {
       {/* ── Naming phase ── */}
       {phase === 'naming' && (
         <>
-          {feedback && (
-            <div className={`inline-feedback ${feedback.type}`}>{feedback.text}</div>
-          )}
+          {feedback && <div className={`inline-feedback ${feedback.type}`}>{feedback.text}</div>}
           {!feedback && (
             <div className="autocomplete-wrapper">
               <input
-                ref={inputRef}
-                type="text" value={input}
+                ref={inputRef} type="text" value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleNamingKeyDown}
                 placeholder="Name a player on this roster…"
@@ -310,8 +322,7 @@ export default function Game() {
               {suggestions.length > 0 && (
                 <ul className="dropdown" ref={dropdownRef}>
                   {suggestions.map((name, i) => (
-                    <li key={name}
-                      className={i === activeIdx ? 'active' : ''}
+                    <li key={name} className={i === activeIdx ? 'active' : ''}
                       onMouseDown={() => handleSelect(name)}
                       onMouseEnter={() => setActiveIdx(i)}
                     >{name}</li>
@@ -330,7 +341,6 @@ export default function Game() {
             ✓ {lastPlayer.name}
             <span className="pts-badge">+{lastPlayer.pts} {lastPlayer.info.label}</span>
           </div>
-
           {!bonusDone && lastPlayer.college && (
             <>
               <div className="bonus-prompt">
@@ -338,9 +348,7 @@ export default function Game() {
                 <span className="bonus-hint"> +1 pt · no penalty for wrong</span>
               </div>
               <div className="bonus-input-row">
-                <input
-                  ref={bonusRef}
-                  type="text" value={bonusInput}
+                <input ref={bonusRef} type="text" value={bonusInput}
                   onChange={e => setBonusInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') submitBonus(false); if (e.key === 'Escape') submitBonus(true); }}
                   placeholder="College name…"
@@ -351,11 +359,9 @@ export default function Game() {
               </div>
             </>
           )}
-
           {bonusDone === 'correct' && <div className="bonus-result correct">✓ +1 bonus — {lastPlayer.college}</div>}
           {bonusDone === 'wrong'   && <div className="bonus-result wrong">✗ It was <strong>{lastPlayer.college}</strong> · no penalty</div>}
           {bonusDone === 'skip'    && <div className="bonus-result skip">Answer: <strong>{lastPlayer.college}</strong></div>}
-          {!lastPlayer.college     && <div className="bonus-result skip">No college data for this player</div>}
         </div>
       )}
 

@@ -125,6 +125,42 @@ export function getFranchise(team) {
   return FRANCHISE_MAP[team] ?? team.toLowerCase();
 }
 
+// All 32 current franchises — used for the win-condition tracker
+export const ALL_FRANCHISES = [
+  { franchise: 'cardinals',  slug: 'ari', name: 'Cardinals'  },
+  { franchise: 'falcons',    slug: 'atl', name: 'Falcons'    },
+  { franchise: 'ravens',     slug: 'bal', name: 'Ravens'     },
+  { franchise: 'bills',      slug: 'buf', name: 'Bills'      },
+  { franchise: 'panthers',   slug: 'car', name: 'Panthers'   },
+  { franchise: 'bears',      slug: 'chi', name: 'Bears'      },
+  { franchise: 'bengals',    slug: 'cin', name: 'Bengals'    },
+  { franchise: 'browns',     slug: 'cle', name: 'Browns'     },
+  { franchise: 'cowboys',    slug: 'dal', name: 'Cowboys'    },
+  { franchise: 'broncos',    slug: 'den', name: 'Broncos'    },
+  { franchise: 'lions',      slug: 'det', name: 'Lions'      },
+  { franchise: 'packers',    slug: 'gb',  name: 'Packers'    },
+  { franchise: 'texans',     slug: 'hou', name: 'Texans'     },
+  { franchise: 'colts',      slug: 'ind', name: 'Colts'      },
+  { franchise: 'jaguars',    slug: 'jax', name: 'Jaguars'    },
+  { franchise: 'chiefs',     slug: 'kc',  name: 'Chiefs'     },
+  { franchise: 'chargers',   slug: 'lac', name: 'Chargers'   },
+  { franchise: 'rams',       slug: 'lar', name: 'Rams'       },
+  { franchise: 'raiders',    slug: 'lv',  name: 'Raiders'    },
+  { franchise: 'dolphins',   slug: 'mia', name: 'Dolphins'   },
+  { franchise: 'vikings',    slug: 'min', name: 'Vikings'    },
+  { franchise: 'patriots',   slug: 'ne',  name: 'Patriots'   },
+  { franchise: 'saints',     slug: 'no',  name: 'Saints'     },
+  { franchise: 'giants',     slug: 'nyg', name: 'Giants'     },
+  { franchise: 'jets',       slug: 'nyj', name: 'Jets'       },
+  { franchise: 'eagles',     slug: 'phi', name: 'Eagles'     },
+  { franchise: 'steelers',   slug: 'pit', name: 'Steelers'   },
+  { franchise: 'seahawks',   slug: 'sea', name: 'Seahawks'   },
+  { franchise: '49ers',      slug: 'sf',  name: '49ers'      },
+  { franchise: 'buccaneers', slug: 'tb',  name: 'Buccaneers' },
+  { franchise: 'titans',     slug: 'ten', name: 'Titans'     },
+  { franchise: 'washington', slug: 'was', name: 'Washington' },
+];
+
 export function getLogoUrl(team) {
   const slug = LOGO_SLUG[team];
   if (!slug) return null;
