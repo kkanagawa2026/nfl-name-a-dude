@@ -78,13 +78,17 @@ function normalizeCollege(s) {
 function collegeMatches(input, college) {
   if (!college || !input.trim()) return false;
   const a = normalizeCollege(input);
-  const b = normalizeCollege(college);
-  if (a === b) return true;
-  for (const [alias, full] of Object.entries(COLLEGE_ALIASES)) {
-    if (a === alias && b === full) return true;
-    if (b === alias && a === full) return true;
+  // college may be semicolon-separated (transfer players) — check each component
+  const parts = college.split('; ').map(s => normalizeCollege(s.trim()));
+  for (const b of parts) {
+    if (a === b) return true;
+    for (const [alias, full] of Object.entries(COLLEGE_ALIASES)) {
+      if (a === alias && b === full) return true;
+      if (b === alias && a === full) return true;
+    }
+    if (levenshtein(a, b) <= 2) return true;
   }
-  return levenshtein(a, b) <= 2;
+  return false;
 }
 
 // Filters allColleges list for the dropdown — substring + alias aware
@@ -138,7 +142,9 @@ export default function Game() {
   const allColleges = useMemo(() => {
     const seen = new Set();
     rostersData.forEach(c => c.players.forEach(p => {
-      if (p.college && !seen.has(p.college)) seen.add(p.college);
+      if (p.college) {
+        p.college.split('; ').forEach(s => { const t = s.trim(); if (t) seen.add(t); });
+      }
     }));
     return [...seen].sort();
   }, []);
