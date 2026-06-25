@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import Fuse from 'fuse.js';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getTeamName, getLogoUrl, getFranchise, ALL_FRANCHISES } from '../utils/teamNames';
 import { saveScore } from './HighScores';
 import rostersData from '../data/rosters.json';
@@ -93,25 +92,39 @@ function FranchiseGrid({ completed }) {
   );
 }
 
+const MAX_SUGGEST = 8;
+
 // ── Component ────────────────────────────────────────────────────
 export default function Game() {
+  // All unique player names across every roster — source for the dropdown
+  const allPlayers = useMemo(() => {
+    const seen = new Set(); const names = [];
+    rostersData.forEach(c => c.players.forEach(p => {
+      if (!seen.has(p.name)) { seen.add(p.name); names.push(p.name); }
+    }));
+    return names.sort();
+  }, []);
+
   const [combo,               setCombo]               = useState(null);
   const [usedCombos,          setUsedCombos]          = useState(new Set());
   const [usedPlayerFranchise, setUsedPlayerFranchise] = useState(new Set());
   const [completedFranchises, setCompletedFranchises] = useState(new Set());
   const [score,               setScore]               = useState(0);
   const [lives,               setLives]               = useState(MAX_WRONG);
-  const [phase,               setPhase]               = useState('naming'); // naming|bonus|gameover|won
+  const [phase,               setPhase]               = useState('naming');
   const [lastPlayer,          setLastPlayer]          = useState(null);
   const [feedback,            setFeedback]            = useState(null);
   const [bonusInput,          setBonusInput]          = useState('');
   const [bonusDone,           setBonusDone]           = useState(null);
   const [ledger,              setLedger]              = useState([]);
   const [input,               setInput]               = useState('');
+  const [suggestions,         setSuggestions]         = useState([]);
+  const [activeIdx,           setActiveIdx]           = useState(-1);
 
-  const inputRef = useRef(null);
-  const bonusRef = useRef(null);
-  const busy     = useRef(false);
+  const inputRef    = useRef(null);
+  const bonusRef    = useRef(null);
+  const dropdownRef = useRef(null);
+  const busy        = useRef(false);
 
   // ── Advance ─────────────────────────────────────────────────
   const advance = useCallback((usedCombosSet, newCompleted, currentScore) => {
@@ -127,7 +140,7 @@ export default function Game() {
     newUsed.add(`${next.season}_${next.team}`);
     setCombo(next);
     setUsedCombos(newUsed);
-    setInput('');
+    setInput(''); setSuggestions([]); setActiveIdx(-1);
     setFeedback(null); setPhase('naming');
     busy.current = false;
     setTimeout(() => inputRef.current?.focus(), 80);
@@ -142,40 +155,54 @@ export default function Game() {
     setCompletedFranchises(new Set());
     setScore(0); setLives(MAX_WRONG);
     setPhase('naming'); setLastPlayer(null); setFeedback(null);
-    setInput('');
+    setInput(''); setSuggestions([]); setActiveIdx(-1);
     setBonusInput(''); setBonusDone(null); setLedger([]);
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
 
   useEffect(() => { startGame(); }, [startGame]);
 
-  // ── Submit player guess ──────────────────────────────────────
-  const handleSubmit = useCallback(() => {
-    if (!combo || busy.current || phase !== 'naming' || !input.trim()) return;
+  // ── Autocomplete filtering ───────────────────────────────────
+  useEffect(() => {
+    const t = input.trim();
+    if (!t) { setSuggestions([]); setActiveIdx(-1); return; }
+    const lower = t.toLowerCase();
+    const starts   = allPlayers.filter(p => p.toLowerCase().startsWith(lower));
+    const contains = allPlayers.filter(p => !p.toLowerCase().startsWith(lower) && p.toLowerCase().includes(lower));
+    setSuggestions([...starts, ...contains].slice(0, MAX_SUGGEST));
+    setActiveIdx(-1);
+  }, [input, allPlayers]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current?.contains(e.target) || inputRef.current?.contains(e.target)) return;
+      setSuggestions([]);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (activeIdx >= 0) dropdownRef.current?.children[activeIdx]?.scrollIntoView({ block: 'nearest' });
+  }, [activeIdx]);
+
+  // ── Select player from dropdown (exact roster check) ─────────
+  const handleSelect = useCallback((playerName) => {
+    if (!combo || busy.current || phase !== 'naming') return;
+    setInput(''); setSuggestions([]); setActiveIdx(-1);
 
     const franchise = getFranchise(combo.team);
-    const pfKey = `${input.trim()}_${franchise}`;
-
-    // Fuzzy match against this roster's player names
-    const fuse = new Fuse(combo.players, { keys: ['name'], threshold: 0.35, ignoreLocation: true });
-    const results = fuse.search(input.trim());
-    const found = results[0]?.item ?? null;
-
-    // Franchise-repeat check (must do after fuzzy so we have the canonical name)
-    if (found) {
-      const canonicalKey = `${found.name}_${franchise}`;
-      if (usedPlayerFranchise.has(canonicalKey)) {
-        setFeedback({ type: 'warn', text: `You already used ${found.name} for this franchise — try someone else` });
-        setInput('');
-        setTimeout(() => { setFeedback(null); inputRef.current?.focus(); }, 2000);
-        return;
-      }
+    const canonicalKey = `${playerName}_${franchise}`;
+    if (usedPlayerFranchise.has(canonicalKey)) {
+      setFeedback({ type: 'warn', text: `You already used ${playerName} for this franchise — try someone else` });
+      setTimeout(() => { setFeedback(null); inputRef.current?.focus(); }, 2000);
+      return;
     }
 
+    const found = combo.players.find(p => p.name === playerName);
     if (!found) {
       const newLives = lives - 1;
-      const msg = { type: 'wrong', text: `✗ "${input.trim()}" wasn't on this roster` };
-      setInput('');
+      const msg = { type: 'wrong', text: `✗ ${playerName} wasn't on this roster` };
       if (newLives <= 0) {
         setLives(0); setFeedback(msg);
         saveScore(score);
@@ -188,9 +215,8 @@ export default function Game() {
     }
 
     // Correct
-    setInput('');
     const newPF = new Set(usedPlayerFranchise);
-    newPF.add(`${found.name}_${franchise}`);
+    newPF.add(canonicalKey);
     setUsedPlayerFranchise(newPF);
 
     const newCompleted = new Set(completedFranchises);
@@ -221,7 +247,7 @@ export default function Game() {
       setPhase('bonus');
       setTimeout(() => advance(usedCombos, newCompleted, newScore), 1400);
     }
-  }, [combo, input, lives, phase, score, usedCombos, usedPlayerFranchise, completedFranchises, advance]);
+  }, [combo, lives, phase, score, usedCombos, usedPlayerFranchise, completedFranchises, advance]);
 
   // ── Bonus ────────────────────────────────────────────────────
   const submitBonus = useCallback((skip = false) => {
@@ -309,17 +335,31 @@ export default function Game() {
         <>
           {feedback && <div className={`inline-feedback ${feedback.type}`}>{feedback.text}</div>}
           {!feedback && (
-            <div className="input-row">
+            <div className="autocomplete-wrapper">
               <input
                 ref={inputRef} type="text" value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                placeholder="Name a player on this roster…"
+                onKeyDown={e => {
+                  if (!suggestions.length) return;
+                  if      (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)); }
+                  else if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
+                  else if (e.key === 'Enter')     { e.preventDefault(); handleSelect(suggestions[activeIdx >= 0 ? activeIdx : 0]); }
+                  else if (e.key === 'Escape')    { setSuggestions([]); setActiveIdx(-1); }
+                }}
+                placeholder="Start typing a player name…"
                 autoComplete="off" autoCorrect="off" spellCheck="false"
               />
-              <button className="btn-primary" onClick={handleSubmit} disabled={!input.trim()}>
-                Submit
-              </button>
+              {suggestions.length > 0 && (
+                <ul className="dropdown" ref={dropdownRef}>
+                  {suggestions.map((name, i) => (
+                    <li key={name}
+                      className={i === activeIdx ? 'active' : ''}
+                      onMouseDown={() => handleSelect(name)}
+                      onMouseEnter={() => setActiveIdx(i)}
+                    >{name}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </>

@@ -234,14 +234,13 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* ── Player input row ── */
-.input-row {
-  display: flex;
-  gap: 8px;
+/* ── Autocomplete dropdown ── */
+.autocomplete-wrapper {
+  position: relative;
 }
 
-.input-row input {
-  flex: 1;
+.autocomplete-wrapper input {
+  width: 100%;
   padding: 14px 18px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.12);
@@ -253,12 +252,45 @@ body {
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.input-row input:focus {
+.autocomplete-wrapper input:focus {
   border-color: rgba(99,102,241,0.6);
   box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
 }
 
-.input-row input::placeholder { color: #3d4560; }
+.autocomplete-wrapper input::placeholder { color: #3d4560; }
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0; right: 0;
+  background: #0f1420;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  list-style: none;
+  overflow-y: auto;
+  max-height: 260px;
+  z-index: 20;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+}
+
+.dropdown li {
+  padding: 11px 18px;
+  cursor: pointer;
+  font-size: 0.92rem;
+  color: #cbd5e1;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.1s;
+}
+
+.dropdown li:last-child { border-bottom: none; }
+.dropdown li:first-child { border-radius: 12px 12px 0 0; }
+.dropdown li:last-child  { border-radius: 0 0 12px 12px; }
+
+.dropdown li.active,
+.dropdown li:hover {
+  background: rgba(99,102,241,0.25);
+  color: #e0e7ff;
+}
 
 /* ── Inline feedback (wrong guess during naming) ── */
 .inline-feedback {
