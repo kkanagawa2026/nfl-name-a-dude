@@ -20,7 +20,7 @@ body {
   max-width: 520px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
 /* ── Header ── */
@@ -65,6 +65,12 @@ body {
 }
 
 /* ── High scores button ── */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn-hs {
   padding: 7px 14px;
   background: transparent;
@@ -80,6 +86,101 @@ body {
 }
 .btn-hs:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
 
+.btn-signin {
+  padding: 7px 14px;
+  background: rgba(99,102,241,0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99,102,241,0.28);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-signin:hover { background: rgba(99,102,241,0.22); }
+
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.user-email {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.btn-signout {
+  padding: 5px 10px;
+  background: transparent;
+  color: #64748b;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+.btn-signout:hover { color: #94a3b8; }
+
+/* ── Sign-in modal ── */
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.signin-desc {
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.signin-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  color: #e8eaf0;
+  font-size: 0.95rem;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.signin-input:focus {
+  border-color: rgba(99,102,241,0.6);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+.signin-input::placeholder { color: #3d4560; }
+
+.signin-error {
+  font-size: 0.82rem;
+  color: #f87171;
+  padding: 8px 12px;
+  background: rgba(239,68,68,0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(239,68,68,0.2);
+}
+
+.signin-sent {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.signin-sent-icon { font-size: 2.4rem; margin-bottom: 4px; }
+.signin-sent p { font-size: 0.9rem; color: #94a3b8; }
+.signin-sent p strong { color: #e2e8f0; }
+.signin-subtext { font-size: 0.78rem !important; color: #475569 !important; }
+
 /* ── Scoreboard ── */
 .scoreboard {
   display: flex;
@@ -88,7 +189,7 @@ body {
   background: rgba(255,255,255,0.03);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 14px;
-  padding: 14px 20px;
+  padding: 10px 16px;
 }
 
 .progress-block {
@@ -123,7 +224,7 @@ body {
 
 .score-value {
   font-family: 'Bebas Neue', sans-serif;
-  font-size: 2.8rem;
+  font-size: 2.2rem;
   color: #fbbf24;
   line-height: 1;
   letter-spacing: 0.02em;
@@ -182,7 +283,7 @@ body {
   background: rgba(255,255,255,0.03);
   border: 1px solid rgba(255,255,255,0.09);
   border-radius: 18px;
-  padding: 32px 24px 24px;
+  padding: 18px 24px 16px;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -202,10 +303,10 @@ body {
 }
 
 .team-logo {
-  width: 110px;
-  height: 110px;
+  width: 80px;
+  height: 80px;
   object-fit: contain;
-  margin: 0 auto 16px;
+  margin: 0 auto 12px;
   display: block;
   filter: drop-shadow(0 4px 16px rgba(0,0,0,0.5));
 }

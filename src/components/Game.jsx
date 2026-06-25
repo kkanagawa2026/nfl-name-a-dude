@@ -19,7 +19,13 @@ function posInfo(pos) {
   return                        { label: 'SPECIAL TEAMS', pts: 3, cls: 'special' };
 }
 
-// ── College matching — Levenshtein, max 2 edits, no substring tricks ─
+// ── Player name normalization — strips apostrophes/hyphens so
+//    "leveon" matches "Le'Veon Bell", "dk" matches "D.K. Metcalf" ──
+function normalizeSearch(s) {
+  return s.toLowerCase().replace(/['''’\-\.]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// ── College matching ─────────────────────────────────────────────
 function levenshtein(a, b) {
   if (a === b) return 0;
   if (!a.length) return b.length;
@@ -29,23 +35,40 @@ function levenshtein(a, b) {
   for (let i = 0; i < a.length; i++) {
     curr[0] = i + 1;
     for (let j = 0; j < b.length; j++) {
-      curr[j + 1] = Math.min(
-        curr[j] + 1,
-        prev[j + 1] + 1,
-        prev[j] + (a[i] === b[j] ? 0 : 1)
-      );
+      curr[j + 1] = Math.min(curr[j] + 1, prev[j + 1] + 1, prev[j] + (a[i] === b[j] ? 0 : 1));
     }
     for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
   }
   return curr[b.length];
 }
 
+// Maps user-typed aliases to normalized stored names (used in validation)
 const COLLEGE_ALIASES = {
-  'usc': 'southern california', 'lsu': 'louisiana state',
-  'fsu': 'florida state',       'ohio st': 'ohio state',
-  'penn st': 'penn state',      'uga': 'georgia',
-  'bama': 'alabama',            'ou': 'oklahoma',
-  'psu': 'penn state',          'tcу': 'texas christian',
+  'usc':      'southern california',
+  'lsu':      'louisiana state',
+  'fsu':      'florida state',
+  'ohio st':  'ohio state',
+  'penn st':  'penn state',
+  'uga':      'georgia',
+  'bama':     'alabama',
+  'ou':       'oklahoma',
+  'psu':      'penn state',
+  'ole miss': 'mississippi',
+  'tcу':      'texas christian',
+};
+
+// Maps aliases to stored names for dropdown filtering
+const COLLEGE_NICKNAMES = {
+  'ole miss': 'mississippi',
+  'usc':      'southern california',
+  'lsu':      'louisiana state',
+  'fsu':      'florida state',
+  'ohio st':  'ohio state',
+  'penn st':  'penn state',
+  'uga':      'georgia',
+  'bama':     'alabama',
+  'ou':       'oklahoma',
+  'psu':      'penn state',
 };
 
 function normalizeCollege(s) {
@@ -57,13 +80,21 @@ function collegeMatches(input, college) {
   const a = normalizeCollege(input);
   const b = normalizeCollege(college);
   if (a === b) return true;
-  // Known abbreviations (e.g. USC → southern california)
   for (const [alias, full] of Object.entries(COLLEGE_ALIASES)) {
     if (a === alias && b === full) return true;
     if (b === alias && a === full) return true;
   }
-  // Levenshtein — allow up to 2 edits (typos only, not partial strings)
   return levenshtein(a, b) <= 2;
+}
+
+// Filters allColleges list for the dropdown — substring + alias aware
+function collegeDropFilter(input, college) {
+  const a = normalizeCollege(input);
+  const b = normalizeCollege(college);
+  if (b.includes(a)) return true;
+  const expanded = COLLEGE_NICKNAMES[a];
+  if (expanded && b.includes(expanded)) return true;
+  return false;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -96,13 +127,20 @@ const MAX_SUGGEST = 8;
 
 // ── Component ────────────────────────────────────────────────────
 export default function Game() {
-  // All unique player names across every roster — source for the dropdown
   const allPlayers = useMemo(() => {
     const seen = new Set(); const names = [];
     rostersData.forEach(c => c.players.forEach(p => {
       if (!seen.has(p.name)) { seen.add(p.name); names.push(p.name); }
     }));
     return names.sort();
+  }, []);
+
+  const allColleges = useMemo(() => {
+    const seen = new Set();
+    rostersData.forEach(c => c.players.forEach(p => {
+      if (p.college && !seen.has(p.college)) seen.add(p.college);
+    }));
+    return [...seen].sort();
   }, []);
 
   const [combo,               setCombo]               = useState(null);
@@ -120,15 +158,17 @@ export default function Game() {
   const [input,               setInput]               = useState('');
   const [suggestions,         setSuggestions]         = useState([]);
   const [activeIdx,           setActiveIdx]           = useState(-1);
+  const [collegeSuggestions,  setCollegeSuggestions]  = useState([]);
+  const [collegeActiveIdx,    setCollegeActiveIdx]    = useState(-1);
 
-  const inputRef    = useRef(null);
-  const bonusRef    = useRef(null);
-  const dropdownRef = useRef(null);
-  const busy        = useRef(false);
+  const inputRef      = useRef(null);
+  const bonusRef      = useRef(null);
+  const dropdownRef   = useRef(null);
+  const collegeDropRef = useRef(null);
+  const busy          = useRef(false);
 
   // ── Advance ─────────────────────────────────────────────────
   const advance = useCallback((usedCombosSet, newCompleted, currentScore) => {
-    // Win check
     if (newCompleted.size >= WIN_COUNT) {
       saveScore(currentScore);
       setPhase('won');
@@ -141,6 +181,7 @@ export default function Game() {
     setCombo(next);
     setUsedCombos(newUsed);
     setInput(''); setSuggestions([]); setActiveIdx(-1);
+    setBonusInput(''); setCollegeSuggestions([]); setCollegeActiveIdx(-1);
     setFeedback(null); setPhase('naming');
     busy.current = false;
     setTimeout(() => inputRef.current?.focus(), 80);
@@ -156,27 +197,41 @@ export default function Game() {
     setScore(0); setLives(MAX_WRONG);
     setPhase('naming'); setLastPlayer(null); setFeedback(null);
     setInput(''); setSuggestions([]); setActiveIdx(-1);
-    setBonusInput(''); setBonusDone(null); setLedger([]);
+    setBonusInput(''); setCollegeSuggestions([]); setCollegeActiveIdx(-1);
+    setBonusDone(null); setLedger([]);
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
 
   useEffect(() => { startGame(); }, [startGame]);
 
-  // ── Autocomplete filtering ───────────────────────────────────
+  // ── Player autocomplete filtering (apostrophe-aware) ──────────
   useEffect(() => {
     const t = input.trim();
     if (!t) { setSuggestions([]); setActiveIdx(-1); return; }
-    const lower = t.toLowerCase();
-    const starts   = allPlayers.filter(p => p.toLowerCase().startsWith(lower));
-    const contains = allPlayers.filter(p => !p.toLowerCase().startsWith(lower) && p.toLowerCase().includes(lower));
+    const norm     = normalizeSearch(t);
+    const starts   = allPlayers.filter(p => normalizeSearch(p).startsWith(norm));
+    const contains = allPlayers.filter(p => !normalizeSearch(p).startsWith(norm) && normalizeSearch(p).includes(norm));
     setSuggestions([...starts, ...contains].slice(0, MAX_SUGGEST));
     setActiveIdx(-1);
   }, [input, allPlayers]);
 
+  // ── College autocomplete filtering ───────────────────────────
+  useEffect(() => {
+    if (phase !== 'bonus' || !lastPlayer?.college) return;
+    const t = bonusInput.trim();
+    if (!t) { setCollegeSuggestions([]); setCollegeActiveIdx(-1); return; }
+    const filtered = allColleges.filter(c => collegeDropFilter(t, c)).slice(0, MAX_SUGGEST);
+    setCollegeSuggestions(filtered);
+    setCollegeActiveIdx(-1);
+  }, [bonusInput, allColleges, phase, lastPlayer]);
+
+  // Close both dropdowns on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (dropdownRef.current?.contains(e.target) || inputRef.current?.contains(e.target)) return;
-      setSuggestions([]);
+      const inPlayer  = dropdownRef.current?.contains(e.target)    || inputRef.current?.contains(e.target);
+      const inCollege = collegeDropRef.current?.contains(e.target) || bonusRef.current?.contains(e.target);
+      if (!inPlayer)  setSuggestions([]);
+      if (!inCollege) setCollegeSuggestions([]);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -186,7 +241,11 @@ export default function Game() {
     if (activeIdx >= 0) dropdownRef.current?.children[activeIdx]?.scrollIntoView({ block: 'nearest' });
   }, [activeIdx]);
 
-  // ── Select player from dropdown (exact roster check) ─────────
+  useEffect(() => {
+    if (collegeActiveIdx >= 0) collegeDropRef.current?.children[collegeActiveIdx]?.scrollIntoView({ block: 'nearest' });
+  }, [collegeActiveIdx]);
+
+  // ── Select player from dropdown ──────────────────────────────
   const handleSelect = useCallback((playerName) => {
     if (!combo || busy.current || phase !== 'naming') return;
     setInput(''); setSuggestions([]); setActiveIdx(-1);
@@ -214,7 +273,6 @@ export default function Game() {
       return;
     }
 
-    // Correct
     const newPF = new Set(usedPlayerFranchise);
     newPF.add(canonicalKey);
     setUsedPlayerFranchise(newPF);
@@ -231,6 +289,7 @@ export default function Game() {
     const playerData = { ...found, pts, info };
     setLastPlayer(playerData);
     setBonusInput(''); setBonusDone(null); setFeedback(null);
+    setCollegeSuggestions([]); setCollegeActiveIdx(-1);
 
     setLedger(l => [{
       name: playerData.name, pos: playerData.pos, info, pts, bonusPts: 0,
@@ -249,21 +308,20 @@ export default function Game() {
     }
   }, [combo, lives, phase, score, usedCombos, usedPlayerFranchise, completedFranchises, advance]);
 
-  // ── Bonus ────────────────────────────────────────────────────
-  const submitBonus = useCallback((skip = false) => {
+  // ── Bonus — accepts an optional college override for dropdown selection ──
+  const submitBonus = useCallback((skip = false, collegeOverride = null) => {
     if (busy.current) return;
     busy.current = true;
-    let bonusPts = 0; let result = 'skip';
-    if (!skip && bonusInput.trim() && collegeMatches(bonusInput, lastPlayer?.college)) {
-      bonusPts = 1; result = 'correct';
+    setCollegeSuggestions([]); setCollegeActiveIdx(-1);
+    const collegeInput = collegeOverride ?? bonusInput;
+    if (!skip && collegeInput.trim() && collegeMatches(collegeInput, lastPlayer?.college)) {
       const newScore = score + 1;
       setScore(newScore);
       setLedger(l => l.map((e, i) => i === 0 ? { ...e, bonusPts: 1 } : e));
-      setBonusDone(result);
+      setBonusDone('correct');
       setTimeout(() => advance(usedCombos, completedFranchises, newScore), 1600);
     } else {
-      result = skip ? 'skip' : 'wrong';
-      setBonusDone(result);
+      setBonusDone(skip ? 'skip' : 'wrong');
       setTimeout(() => advance(usedCombos, completedFranchises, score), 1600);
     }
   }, [bonusInput, lastPlayer, score, usedCombos, completedFranchises, advance]);
@@ -315,7 +373,7 @@ export default function Game() {
           <div className="result-title">Game Over</div>
           {feedback && <div className="result-sub">{feedback.text}</div>}
           <div className="final-score">Final score: <strong>{score}</strong></div>
-          <div className="final-score" style={{fontSize:'0.85rem'}}>Teams completed: <strong>{completedFranchises.size}/{WIN_COUNT}</strong></div>
+          <div className="final-score" style={{ fontSize: '0.85rem' }}>Teams completed: <strong>{completedFranchises.size}/{WIN_COUNT}</strong></div>
           <button className="btn-primary" onClick={startGame}>Play Again</button>
         </div>
       )}
@@ -379,12 +437,36 @@ export default function Game() {
                 <span className="bonus-hint"> +1 pt · no penalty for wrong</span>
               </div>
               <div className="bonus-input-row">
-                <input ref={bonusRef} type="text" value={bonusInput}
-                  onChange={e => setBonusInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') submitBonus(false); if (e.key === 'Escape') submitBonus(true); }}
-                  placeholder="College name…"
-                  autoComplete="off" autoCorrect="off" spellCheck="false"
-                />
+                <div className="autocomplete-wrapper" style={{ flex: 1 }}>
+                  <input
+                    ref={bonusRef} type="text" value={bonusInput}
+                    onChange={e => setBonusInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (collegeSuggestions.length) {
+                        if      (e.key === 'ArrowDown') { e.preventDefault(); setCollegeActiveIdx(i => Math.min(i + 1, collegeSuggestions.length - 1)); }
+                        else if (e.key === 'ArrowUp')   { e.preventDefault(); setCollegeActiveIdx(i => Math.max(i - 1, 0)); }
+                        else if (e.key === 'Enter')     { e.preventDefault(); submitBonus(false, collegeSuggestions[collegeActiveIdx >= 0 ? collegeActiveIdx : 0]); }
+                        else if (e.key === 'Escape')    { setCollegeSuggestions([]); setCollegeActiveIdx(-1); }
+                      } else {
+                        if (e.key === 'Enter') submitBonus(false);
+                        if (e.key === 'Escape') submitBonus(true);
+                      }
+                    }}
+                    placeholder="College name…"
+                    autoComplete="off" autoCorrect="off" spellCheck="false"
+                  />
+                  {collegeSuggestions.length > 0 && (
+                    <ul className="dropdown" ref={collegeDropRef}>
+                      {collegeSuggestions.map((name, i) => (
+                        <li key={name}
+                          className={i === collegeActiveIdx ? 'active' : ''}
+                          onMouseDown={() => submitBonus(false, name)}
+                          onMouseEnter={() => setCollegeActiveIdx(i)}
+                        >{name}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
                 <button className="btn-primary" onClick={() => submitBonus(false)} disabled={!bonusInput.trim()}>Submit</button>
                 <button className="btn-ghost" onClick={() => submitBonus(true)}>Skip →</button>
               </div>
