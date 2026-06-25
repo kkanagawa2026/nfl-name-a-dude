@@ -26,23 +26,6 @@ function fetch(url, redirectCount = 0) {
   });
 }
 
-// Minimal CSV parser that handles quoted fields
-function parseCSV(text) {
-  const lines = text.split('\n');
-  if (!lines.length) return [];
-  const headers = splitCSVLine(lines[0]);
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const values = splitCSVLine(line);
-    const obj = {};
-    headers.forEach((h, idx) => { obj[h] = values[idx] ?? ''; });
-    rows.push(obj);
-  }
-  return rows;
-}
-
 function splitCSVLine(line) {
   const result = [];
   let current = '';
@@ -63,9 +46,30 @@ function splitCSVLine(line) {
   return result;
 }
 
+function parseCSV(text) {
+  const lines = text.split('\n');
+  if (!lines.length) return [];
+  const headers = splitCSVLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const values = splitCSVLine(line);
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = values[idx] ?? ''; });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function clean(val) {
+  const v = (val ?? '').trim();
+  return (v === 'NA' || v === '') ? null : v;
+}
+
 async function main() {
-  // nflverse-data roster files: one CSV per season
   const BASE_URL = 'https://github.com/nflverse/nflverse-data/releases/download/rosters';
+  // key → Map<playerName, {pos, college}>
   const combos = {};
 
   for (let year = START_YEAR; year <= END_YEAR; year++) {
@@ -74,29 +78,43 @@ async function main() {
     try {
       const csv = await fetch(url);
       const rows = parseCSV(csv);
-      let playerCount = 0;
 
       for (const row of rows) {
-        const name = row.full_name?.trim();
-        const team = row.team?.trim();
+        const name = clean(row.full_name);
+        const team = clean(row.team);
+        const pos  = clean(row.position);
+        const college = clean(row.college);
         const season = parseInt(row.season, 10) || year;
-        if (!name || !team || name === 'NA') continue;
+        if (!name || !team) continue;
 
         const key = `${season}_${team}`;
-        if (!combos[key]) combos[key] = { season, team, players: new Set() };
-        combos[key].players.add(name);
-        playerCount++;
+        if (!combos[key]) combos[key] = { season, team, players: new Map() };
+
+        // Keep the first entry we see for each player name
+        if (!combos[key].players.has(name)) {
+          // only store defined fields to keep JSON compact
+          const entry = {};
+          if (pos)     entry.pos     = pos;
+          if (college) entry.college = college;
+          combos[key].players.set(name, entry);
+        }
       }
 
       const teams = Object.keys(combos).filter(k => k.startsWith(`${year}_`)).length;
-      console.log(`${teams} teams, ${playerCount} player rows`);
+      console.log(`${teams} teams`);
     } catch (err) {
       console.log(`FAILED — ${err.message}`);
     }
   }
 
   const data = Object.values(combos)
-    .map(c => ({ season: c.season, team: c.team, players: [...c.players].sort() }))
+    .map(c => ({
+      season: c.season,
+      team: c.team,
+      players: [...c.players.entries()]
+        .map(([name, extra]) => ({ name, ...extra }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }))
     .sort((a, b) => a.season - b.season || a.team.localeCompare(b.team));
 
   const outPath = path.join(__dirname, '../src/data/rosters.json');
