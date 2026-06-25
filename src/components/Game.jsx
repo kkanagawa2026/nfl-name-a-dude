@@ -127,7 +127,7 @@ export default function Game() {
     newUsed.add(`${next.season}_${next.team}`);
     setCombo(next);
     setUsedCombos(newUsed);
-    setInput(''); setSuggestions([]); setActiveIdx(-1);
+    setInput('');
     setFeedback(null); setPhase('naming');
     busy.current = false;
     setTimeout(() => inputRef.current?.focus(), 80);
@@ -142,7 +142,7 @@ export default function Game() {
     setCompletedFranchises(new Set());
     setScore(0); setLives(MAX_WRONG);
     setPhase('naming'); setLastPlayer(null); setFeedback(null);
-    setInput(''); setSuggestions([]); setActiveIdx(-1);
+    setInput('');
     setBonusInput(''); setBonusDone(null); setLedger([]);
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
