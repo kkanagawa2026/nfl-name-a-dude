@@ -721,13 +721,48 @@ body {
   color: #fcd34d;
 }
 
-/* ── Win panel ── */
-.won-panel {
+/* ── Win celebration modal ── */
+.win-modal {
+  text-align: center;
   border-color: rgba(251,191,36,0.3);
 }
 
-.won-title {
-  color: #fbbf24 !important;
+.win-icon {
+  font-size: 3.2rem;
+  margin-bottom: 8px;
+}
+
+.win-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2.4rem;
+  letter-spacing: 0.06em;
+  color: #fbbf24;
+  margin-bottom: 10px;
+}
+
+.win-sub {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin-bottom: 14px;
+}
+
+.win-score {
+  font-size: 1rem;
+  color: #94a3b8;
+  margin-bottom: 20px;
+}
+
+.win-score strong {
+  color: #fbbf24;
+  font-size: 1.6rem;
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.win-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
 }
 
 /* ── High scores modal ── */

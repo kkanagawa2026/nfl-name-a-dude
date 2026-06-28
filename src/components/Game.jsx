@@ -102,9 +102,18 @@ function collegeDropFilter(input, college) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
-function pickRandom(arr, exclude) {
-  const pool = arr.filter(c => !exclude.has(`${c.season}_${c.team}`));
-  return (pool.length ? pool : arr)[Math.floor(Math.random() * (pool.length || arr.length))];
+// Excludes already-used season+team combos, and — while still chasing the
+// 32-franchise win — excludes franchises already completed so each team
+// shows once before any repeats. Once all 32 are done, that second filter
+// always empties the pool and is skipped, naturally re-enabling repeats.
+function pickRandom(arr, excludeCombos, excludeFranchises) {
+  let pool = arr.filter(c => !excludeCombos.has(`${c.season}_${c.team}`));
+  if (!pool.length) pool = arr;
+  if (excludeFranchises?.size) {
+    const filtered = pool.filter(c => !excludeFranchises.has(getFranchise(c.team)));
+    if (filtered.length) pool = filtered;
+  }
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // ── Franchise tracker grid ───────────────────────────────────────
@@ -166,6 +175,7 @@ export default function Game() {
   const [activeIdx,           setActiveIdx]           = useState(-1);
   const [collegeSuggestions,  setCollegeSuggestions]  = useState([]);
   const [collegeActiveIdx,    setCollegeActiveIdx]    = useState(-1);
+  const [hasWon,              setHasWon]              = useState(false);
 
   const inputRef      = useRef(null);
   const bonusRef      = useRef(null);
@@ -175,13 +185,14 @@ export default function Game() {
 
   // ── Advance ─────────────────────────────────────────────────
   const advance = useCallback((usedCombosSet, newCompleted, currentScore) => {
-    if (newCompleted.size >= WIN_COUNT) {
+    if (!hasWon && newCompleted.size >= WIN_COUNT) {
+      setHasWon(true);
       saveScore(currentScore);
       setPhase('won');
       busy.current = false;
       return;
     }
-    const next = pickRandom(rostersData, usedCombosSet);
+    const next = pickRandom(rostersData, usedCombosSet, newCompleted);
     const newUsed = new Set(usedCombosSet);
     newUsed.add(`${next.season}_${next.team}`);
     setCombo(next);
@@ -191,16 +202,17 @@ export default function Game() {
     setFeedback(null); setPhase('naming');
     busy.current = false;
     setTimeout(() => inputRef.current?.focus(), 80);
-  }, []);
+  }, [hasWon]);
 
   const startGame = useCallback(() => {
     busy.current = false;
-    const first = pickRandom(rostersData, new Set());
+    const first = pickRandom(rostersData, new Set(), new Set());
     setCombo(first);
     setUsedCombos(new Set([`${first.season}_${first.team}`]));
     setUsedPlayerFranchise(new Set());
     setCompletedFranchises(new Set());
     setScore(0); setLives(MAX_WRONG);
+    setHasWon(false);
     setPhase('naming'); setLastPlayer(null); setFeedback(null);
     setInput(''); setSuggestions([]); setActiveIdx(-1);
     setBonusInput(''); setCollegeSuggestions([]); setCollegeActiveIdx(-1);
@@ -384,16 +396,6 @@ export default function Game() {
         </div>
       )}
 
-      {/* ── You win ── */}
-      {phase === 'won' && (
-        <div className="result-panel won-panel">
-          <div className="result-icon">🏆</div>
-          <div className="result-title won-title">All 32 Teams!</div>
-          <div className="final-score">Final score: <strong>{score}</strong></div>
-          <button className="btn-primary" onClick={startGame}>Play Again</button>
-        </div>
-      )}
-
       {/* ── Naming phase ── */}
       {phase === 'naming' && (
         <>
@@ -514,6 +516,22 @@ export default function Game() {
       <FranchiseGrid completed={completedFranchises} />
 
       </div>{/* end game-body */}
+
+      {/* ── You win ── */}
+      {phase === 'won' && (
+        <div className="hs-overlay">
+          <div className="hs-modal win-modal">
+            <div className="win-icon">🏆</div>
+            <div className="win-title">ALL 32 TEAMS!</div>
+            <p className="win-sub">You named a player from every NFL franchise.</p>
+            <div className="win-score">Final score: <strong>{score}</strong></div>
+            <div className="win-actions">
+              <button className="btn-primary" onClick={() => advance(usedCombos, completedFranchises, score)}>Keep Going →</button>
+              <button className="btn-ghost" onClick={startGame}>Play Again</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
