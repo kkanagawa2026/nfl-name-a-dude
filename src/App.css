@@ -453,9 +453,9 @@ body {
 }
 
 .correct-badge.defense {
-  background: rgba(239,68,68,0.12);
-  border: 1px solid rgba(239,68,68,0.3);
-  color: #fca5a5;
+  background: rgba(168,85,247,0.12);
+  border: 1px solid rgba(168,85,247,0.3);
+  color: #d8b4fe;
 }
 
 .correct-badge.special {
@@ -669,8 +669,8 @@ body {
 }
 
 .ledger-pos-badge.defense {
-  background: rgba(239,68,68,0.2);
-  color: #fca5a5;
+  background: rgba(168,85,247,0.2);
+  color: #d8b4fe;
 }
 
 .ledger-pos-badge.special {
