@@ -51,8 +51,19 @@ function parseCSV(text) {
   return rows;
 }
 
+function decodeHtmlEntities(s) {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
 function clean(val) {
-  const v = (val ?? '').trim();
+  let v = (val ?? '').trim();
+  if (v.includes('&')) v = decodeHtmlEntities(v);
   return (v === 'NA' || v === '') ? null : v;
 }
 

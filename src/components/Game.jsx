@@ -21,8 +21,15 @@ function posInfo(pos) {
 
 // ── Player name normalization — strips apostrophes/hyphens so
 //    "leveon" matches "Le'Veon Bell", "dk" matches "D.K. Metcalf" ──
+// Also strips trailing suffixes (Jr/Sr/II/III/IV) since nflverse's
+// full_name field inconsistently includes them — "Robert Griffin III"
+// should match the stored "Robert Griffin" and vice versa.
+const NAME_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
 function normalizeSearch(s) {
-  return s.toLowerCase().replace(/['''’\-\.]/g, '').replace(/\s+/g, ' ').trim();
+  const cleaned = s.toLowerCase().replace(/['''’\-\.]/g, '').replace(/\s+/g, ' ').trim();
+  const words = cleaned.split(' ');
+  while (words.length > 1 && NAME_SUFFIXES.has(words[words.length - 1])) words.pop();
+  return words.join(' ');
 }
 
 // ── College matching ─────────────────────────────────────────────
@@ -55,6 +62,8 @@ const COLLEGE_ALIASES = {
   'psu':      'penn state',
   'ole miss': 'mississippi',
   'tcу':      'texas christian',
+  'nc state': 'north carolina state',
+  'unc':      'north carolina',
 };
 
 // Maps aliases to stored names for dropdown filtering
@@ -69,6 +78,8 @@ const COLLEGE_NICKNAMES = {
   'bama':     'alabama',
   'ou':       'oklahoma',
   'psu':      'penn state',
+  'nc state': 'north carolina state',
+  'unc':      'north carolina',
 };
 
 function normalizeCollege(s) {
